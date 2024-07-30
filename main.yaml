@@ -1,0 +1,29 @@
+---
+- name: Install RabbitMQ Ansible collection
+  hosts: localhost
+  tasks:
+    - name: Install community.rabbitmq collection
+      ansible.builtin.command:
+        cmd: ansible-galaxy collection install community.rabbitmq
+      changed_when: False
+
+- name: Setup Web Server
+  hosts: webservers
+  become: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    pg_password: 'hng'
+    rabbitmq_password: 'password'
+    node_version: '18'
+    project_dir: '/opt/stage_5b'
+  roles:
+    - webserver
+
+- name: Setup Database Server
+  hosts: dbservers
+  become: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3  # Ensure Python interpreter is set for DB server
+  roles:
+    - database
+

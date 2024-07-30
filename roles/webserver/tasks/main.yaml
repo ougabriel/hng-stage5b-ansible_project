@@ -1,0 +1,184 @@
+# roles/webserver/tasks/main.yaml
+---
+- name: Update and upgrade apt packages
+  apt:
+    update_cache: yes
+    upgrade: dist
+
+- name: Create user hng
+  user:
+    name: hng
+    state: present
+    shell: /bin/bash
+    groups: sudo
+
+- name: Install required packages
+  apt:
+    name:
+      - python3-psycopg2
+      - git
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - software-properties-common
+      - postgresql
+      - rabbitmq-server
+    state: present
+
+- name: Set Python interpreter
+  set_fact:
+    ansible_python_interpreter: /usr/bin/python3
+
+- name: Install NodeSource APT key
+  apt_key:
+    url: 'https://deb.nodesource.com/gpgkey/nodesource.gpg.key'
+    state: present
+
+- name: Add NodeSource APT repository
+  apt_repository:
+    repo: 'deb https://deb.nodesource.com/node_{{ node_version }}.x {{ ansible_distribution_release | lower }} main'
+    state: present
+    filename: nodesource
+
+- name: Update apt cache after adding new repository
+  apt:
+    update_cache: yes
+
+- name: Install Node.js
+  apt:
+    name: nodejs
+    state: present
+
+- name: Ensure npm is installed and up-to-date
+  command: npm install -g npm
+
+- name: Install pm2 globally using npm
+  npm:
+    name: pm2
+    global: yes
+
+- name: Ensure repository directory is clean
+  shell: |
+    if [ -d {{ project_dir }} ]; then
+      cd {{ project_dir }} && git reset --hard && git clean -fd;
+    fi
+  args:
+    executable: /bin/bash
+  ignore_errors: yes
+
+- name: Clone or update the DevOps branch of the repository
+  git:
+    repo: 'https://github.com/hngprojects/hng_boilerplate_nestjs.git'
+    dest: "{{ project_dir }}"
+    version: devops
+    force: yes
+  notify:
+    - Set ownership of the repository
+
+- name: Create .env file from example
+  copy:
+    src: "{{ project_dir }}/.env.example"
+    dest: "{{ project_dir }}/.env"
+    remote_src: yes
+
+- name: Install project dependencies
+  command: npm install --include=dev
+  args:
+    chdir: "{{ project_dir }}"
+
+- name: Build the project
+  command: npm run build
+  args:
+    chdir: "{{ project_dir }}"
+
+- name: Start the NestJS application with PM2
+  command: pm2 start dist/src/main.js --name nestjs-app -f
+  args:
+    chdir: "{{ project_dir }}"
+
+- name: Ensure PM2 is set to start on boot
+  command: pm2 startup
+
+- name: Save PM2 process list
+  command: pm2 save
+
+- name: Install Nginx
+  apt:
+    name: nginx
+    state: present
+
+- name: Configure Nginx to reverse proxy to the application
+  template:
+    src: nginx.conf.j2
+    dest: /etc/nginx/sites-available/default
+  notify:
+    - Restart Nginx
+
+- name: Ensure /var/secrets directory exists
+  file:
+    path: /var/secrets
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Save PostgreSQL credentials
+  copy:
+    dest: /var/secrets/pg_pw.txt
+    content: |
+      username: username
+      password: "{{ pg_password }}"
+    owner: hng
+    group: hng
+    mode: '0600'
+
+- name: Create log directory
+  file:
+    path: /var/log/stage_5b
+    state: directory
+    owner: hng
+    group: hng
+    mode: '0755'
+
+- name: Set up logging for stdout and stderr
+  lineinfile:
+    path: /etc/rsyslog.conf
+    state: present
+    regexp: '^$'
+    line: "*.* /var/log/stage_5b/out.log;RSYSLOG_FileFormat"
+
+- name: Restart rsyslog
+  service:
+    name: rsyslog
+    state: restarted
+
+- name: Start RabbitMQ service
+  service:
+    name: rabbitmq-server
+    state: started
+    enabled: yes
+
+- name: Enable RabbitMQ Management Plugin
+  command: rabbitmq-plugins enable rabbitmq_management
+  become: yes
+
+- name: Create RabbitMQ user and set tags
+  shell: |
+    rabbitmqctl list_users | grep -q '^myuser[[:space:]]' || rabbitmqctl add_user myuser "{{ rabbitmq_password }}"
+    rabbitmqctl set_user_tags myuser administrator
+  become: yes
+
+- name: Set RabbitMQ user permissions for default vhost
+  shell: rabbitmqctl set_permissions -p / myuser ".*" ".*" ".*"
+  become: yes
+
+- name: Create RabbitMQ virtual host
+  shell: rabbitmqctl add_vhost my_vhost
+  become: yes
+  args:
+    creates: /var/lib/rabbitmq/mnesia/rabbit@$(hostname)-my_vhost
+
+- name: Set RabbitMQ user permissions for my_vhost
+  shell: rabbitmqctl set_permissions -p my_vhost myuser ".*" ".*" ".*"
+  become: yes
+

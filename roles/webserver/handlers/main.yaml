@@ -1,0 +1,9 @@
+---
+- name: Set ownership of the repository
+  command: chown -R hng:hng {{ project_dir }}
+
+- name: Restart Nginx
+  service:
+    name: nginx
+    state: restarted
+
