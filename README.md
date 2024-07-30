@@ -12,7 +12,7 @@ This documentation provides the steps to set up nestjs on a server using an Ansi
 
 #### Directory Structure
 
-Your project directory should be organized as follows:
+Project directory should be organized as follows:
 
 ```
 ansible_project/
@@ -214,4 +214,4 @@ This command will execute the tasks defined in the playbook, set up the web serv
 - Ensure the `.env.local` file is correctly placed on the target server (`dbserver1`) at `/opt/stage_5b/.env.local`.
 - Ensure the environment variables in `.env.local` are correctly defined (e.g., `DB_USERNAME`, `DB_PASSWORD`, `DB_DATABASE`, `DB_HOST`, `DB_PORT`).
 
-By following this documentation, you should be able to configure PostgreSQL on your database server using Ansible and environment variables from a `.env.local` file.
+Thanks for reading, refer to repo dir to access the `webserver` script
